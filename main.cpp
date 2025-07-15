@@ -1,68 +1,12 @@
 #include <filesystem>
-#include <hip/amd_detail/amd_hip_runtime.h>
-#include <hip/driver_types.h>
 #include <iostream>
 #include <vector>
 #include <random>
 #include <hip/hip_runtime.h>
-#include <rocwmma/rocwmma.hpp>
 
 #include "utils.hpp"
+#include "kernels.hpp"
 
-
-template <int M, int K, int N>
-__global__ void naive_mm(const float *A, const float *B, float *C)
-{
-    const int i = blockDim.x * blockIdx.x + threadIdx.x;
-    const int j = blockDim.y * blockIdx.y + threadIdx.y;
-
-    if (i < M and j < N) {
-        float dot = 0.0f;
-        for (int k = 0; k < K; ++k) {
-            dot += A[i*K+k] * B[k*N+j];
-        }
-        C[i*N+j] = dot;
-    }
-}
-
-
-template <int M, int K, int N, int BLOCK_SIZE>
-__global__ void blocked_mm(const float *A, const float *B, float *C)
-{
-    const int tx = threadIdx.x;
-    const int ty = threadIdx.y;
-    const int bx = blockIdx.x;
-    const int by = blockIdx.y;
-
-    const int j = BLOCK_SIZE * by + ty;
-    const int i = BLOCK_SIZE * bx + tx;
-    const int phases = (BLOCK_SIZE+K-1) / BLOCK_SIZE;
-
-    __shared__ float _A[BLOCK_SIZE][BLOCK_SIZE];
-    __shared__ float _B[BLOCK_SIZE][BLOCK_SIZE];
-
-    float thread_dot  = 0.0f;
-    for (int phase = 0; phase < phases; ++phase) {
-        if ((i < M) and ((phase*BLOCK_SIZE+tx) < N))
-            _A[ty][tx] = A[(i)*K + phase * BLOCK_SIZE + tx];
-        else
-            _A[ty][tx] = 0.0f;
-
-        if (((phase*BLOCK_SIZE+ty) < K) and (j < N))
-            _B[ty][tx] = B[(phase*BLOCK_SIZE+ty)*N+j];
-        else
-            _B[ty][tx] = 0.0f;
-
-        __syncthreads();
-
-        for (int k = 0; k < BLOCK_SIZE; ++k) {
-            thread_dot += _A[ty][k] * _B[k][ty];
-        }
-        __syncthreads();
-    }
-    if (i < M and j < N)
-        C[i*N+j] = thread_dot;
-}
 
 template <int M, int K, int N>
 void mm(const float* A, const float* B, float* C)

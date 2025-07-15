@@ -1,23 +1,36 @@
-TARGET					:= bin
-ROCM_INSTALL_DIR		:= /opt/rocm
-HIPCC					:= $(ROCM_INSTALL_DIR)/bin/hipcc
-CXX_FLAGS 				:= -Wall -Wextra -O3 -std=c++20
-INCLUDE_DIR             := -I $(ROCM_INSTALL_DIR)/include -I $(ROCM_INSTALL_DIR)/include/rocwmma
-LDLIB					:= -L $(ROCM_INSTALL_DIR)/lib
-GFX						:= gfx1201
+ROCM_PATH = /opt/rocm
+HIPCC = $(ROCM_PATH)/bin/hipcc
+ROCM_LIB = $(ROCM_PATH)/lib
 
-SOURCE                  := main.cpp
+CXXFLAGS = -std=c++20 -O2 -g -Wall -Wextra
+HIP_FLAGS = --offload-arch=gfx1201
+INCLUDE_FLAGS = -I$(ROCM_PATH)/include -I$(ROCM_PATH)/include/rocwmma -I.
+LIBRARY_FLAGS = -L$(ROCM_LIB)
 
-all: $(TARGET)
+BUILD_DIR = ./build
+TARGET = $(BUILD_DIR)/bin
+KERNEL_SRC = kernels.cpp
+KERNEL_HDR = kernels.hpp
+UTILS_HDR = utils.hpp
 
-.PHONY: all run clean
+SOURCES = main.cpp $(KERNEL_SRC)
+OBJECTS = $(SOURCES:%.cpp=$(BUILD_DIR)/%.o)
 
-$(TARGET): $(SOURCE)
-	$(HIPCC) $(INCLUDE_DIR) $(LDLIB) $(CXX_FLAGS) --offload-arch=$(GFX) -o $(TARGET) $(SOURCE)
+all: $(BUILD_DIR) $(TARGET)
 
-run: $(TARGET)
-	./$(TARGET)
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+$(TARGET): $(OBJECTS)
+	$(HIPCC) $(CXXFLAGS) $(HIP_FLAGS) -o $@ $^ $(LIBRARY_FLAGS)
+
+$(BUILD_DIR)/%.o: %.cpp $(KERNEL_HDR) $(UTILS_HDR) | $(BUILD_DIR)
+	$(HIPCC) $(CXXFLAGS) $(HIP_FLAGS) $(INCLUDE_FLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(TARGET)
+	rm -rf $(BUILD_DIR)
 
+.PHONY: all clean
+
+$(BUILD_DIR)/main.o: $(KERNEL_HDR) $(UTILS_HDR)
+$(BUILD_DIR)/kernels.o: $(KERNEL_HDR) $(UTILS_HDR)
